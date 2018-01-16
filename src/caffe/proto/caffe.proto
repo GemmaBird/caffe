@@ -419,6 +419,8 @@ message LayerParameter {
   optional ThresholdParameter threshold_param = 128;
   optional TileParameter tile_param = 138;
   optional WindowDataParameter window_data_param = 129;
+  optional ChannelScaleParameter channel_scale_param = 237;
+  optional LabelSpecificAddParameter label_specific_add_param = 241;
 }
 
 // Message that stores parameters used to apply transformation
@@ -1423,4 +1425,19 @@ message PReLUParameter {
   optional FillerParameter filler = 1;
   // Whether or not slope parameters are shared across channels.
   optional bool channel_shared = 2 [default = false];
+}
+
+message ChannelScaleParameter{
+  optional bool do_forward = 1 [default = true];
+  optional bool do_backward_feature = 2 [default = true];
+  optional bool do_backward_scale = 3 [default = true];
+  optional bool global_scale = 4 [default = false];
+  optional float max_global_scale = 5 [default = 1000.0];
+  optional float min_global_scale = 6 [default = 0.0];
+  optional float init_global_scale = 7 [default = 1.0];
+}
+
+message LabelSpecificAddParameter {
+  optional float bias = 1 [default = 0.0];
+  optional bool transform_test = 2 [default = false];
 }
