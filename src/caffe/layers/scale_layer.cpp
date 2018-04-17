@@ -17,6 +17,7 @@ void ScaleLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   } else if (bottom.size() == 1) {
     // scale is a learned parameter; initialize it
     axis_ = bottom[0]->CanonicalAxisIndex(param.axis());
+    gan_mode_ = 1;
     const int num_axes = param.num_axes();
     CHECK_GE(num_axes, -1) << "num_axes must be non-negative, "
                            << "or -1 to extend to the end of bottom[0]";
@@ -56,17 +57,9 @@ void ScaleLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     bias_bottom_vec_.resize(1);
     bias_bottom_vec_[0] = bottom[0];
     bias_layer_->SetUp(bias_bottom_vec_, top);
-    if (this->blobs_.size() + bottom.size() < 3) {
-      // case: blobs.size == 1 && bottom.size == 1
-      // or blobs.size == 0 && bottom.size == 2
-      bias_param_id_ = this->blobs_.size();
-      this->blobs_.resize(bias_param_id_ + 1);
-      this->blobs_[bias_param_id_] = bias_layer_->blobs()[0];
-    } else {
-      // bias param already initialized
-      bias_param_id_ = this->blobs_.size() - 1;
-      bias_layer_->blobs()[0] = this->blobs_[bias_param_id_];
-    }
+    bias_param_id_ = this->blobs_.size();
+    this->blobs_.resize(bias_param_id_ + 1);
+    this->blobs_[bias_param_id_] = bias_layer_->blobs()[0];
     bias_propagate_down_.resize(1, false);
   }
   this->param_propagate_down_.resize(this->blobs_.size(), true);
@@ -144,14 +137,21 @@ void ScaleLayer<Dtype>::Forward_cpu(
 template <typename Dtype>
 void ScaleLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
-  if (bias_layer_ &&
+  bool update_weight = true;
+  if (this->layer_param_.scale_param().gen_mode() && gan_mode_ != 2) {
+	update_weight = false;
+  }
+  if (this->layer_param_.scale_param().dis_mode() && gan_mode_ == 2) {
+	update_weight = false;
+  }
+  if (bias_layer_ && update_weight &&
       this->param_propagate_down_[this->param_propagate_down_.size() - 1]) {
     bias_layer_->Backward(top, bias_propagate_down_, bias_bottom_vec_);
   }
   const bool scale_param = (bottom.size() == 1);
   Blob<Dtype>* scale = scale_param ? this->blobs_[0].get() : bottom[1];
-  if ((!scale_param && propagate_down[1]) ||
-      (scale_param && this->param_propagate_down_[0])) {
+  if ((!scale_param && propagate_down[1] && update_weight) ||
+      (scale_param && this->param_propagate_down_[0] && update_weight)) {
     const Dtype* top_diff = top[0]->cpu_diff();
     const bool in_place = (bottom[0] == top[0]);
     const Dtype* bottom_data = (in_place ? &temp_ : bottom[0])->cpu_data();
@@ -202,6 +202,7 @@ void ScaleLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       }
     }
   }
+  // gradient w.r.t. bottom data
   if (propagate_down[0]) {
     const Dtype* top_diff = top[0]->cpu_diff();
     const Dtype* scale_data = scale->cpu_data();
@@ -215,6 +216,8 @@ void ScaleLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       }
     }
   }
+  // update gan_mode_
+  gan_mode_ = gan_mode_ == 2 ? 1 : gan_mode_ + 1;
 }
 
 #ifdef CPU_ONLY
